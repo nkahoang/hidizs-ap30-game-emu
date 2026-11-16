@@ -1,0 +1,20 @@
+# Never publish these: vendor firmware, game ROMs, and anything built from them.
+/firmware/*
+!/firmware/README.md
+/roms/*
+!/roms/README.md
+/build/
+/local/
+/third_party/gb-test-roms/
+
+*.IMG
+*.img
+*.gb
+*.gbc
+*.sav
+*.mgw
+
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

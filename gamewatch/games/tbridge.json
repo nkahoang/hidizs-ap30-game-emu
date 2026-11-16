@@ -1,0 +1,12 @@
+{
+  "_comment": "Turtle Bridge (TL-28, SM510). Wiring as documented by MAME's hh_sm510 driver: S1 = right/left, S2 = Time/Game B/Game A/Alarm. Use with your own tl-28 ROM dump and gnw_tbridge.svg.",
+  "keys": {
+    "right": { "s": 1, "k": 1 },
+    "left":  { "s": 1, "k": 8 },
+    "up":    { "s": 2, "k": 1 },
+    "vol_b": { "s": 2, "k": 2 },
+    "play":  { "s": 2, "k": 4 },
+    "down":  { "s": 2, "k": 8 },
+    "vol_a": "acl"
+  }
+}

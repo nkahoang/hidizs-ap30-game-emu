@@ -1,0 +1,9 @@
+{
+  "_comment": "Key map for the built-in test ROM (tools/demo_rom.py). Each key drives one K bit on strobe line S1.",
+  "keys": {
+    "left":  { "s": 1, "k": 1 },
+    "up":    { "s": 1, "k": 2 },
+    "play":  { "s": 1, "k": 4 },
+    "right": { "s": 1, "k": 8 }
+  }
+}
