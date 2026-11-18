@@ -46,7 +46,7 @@ more out of the device.
 
 ## Read this first
 
-**Flashing can brick the player.** The AP30 has no reset hole, unlike the Echosnow Mini, so an image that doesn't boot may risk bricking it. 
+**Flashing can brick the player.** The AP30 has no reset hole, unlike the Echosnow Mini, so an image that doesn't boot may risk bricking it. A long press on power does force the player off from a hang (reported by ensui, not yet repeated here), but that does not rescue an image that cannot boot.
 So far everything has been developed and tested on a single
 player (My own device got flashed several times and it was fine, but consider yourself warned).
 
@@ -131,7 +131,8 @@ Flashing has a few rules, all found by getting them wrong:
   that.
 - Every image gets a newer header date than the one installed
   (`python ap30.py gb --date 2026-11-01`). Whether the player really needs
-  this has never been tested.
+  this has never been tested on the device; ensui's static analysis says the
+  date is not checked (see the notes).
 - To add or swap games later, connect without formatting and run `flash`
   with `--no-image --roms roms/gameboy`.
 
@@ -332,6 +333,12 @@ build/         everything generated (not in git)
   [Flame Ocean](https://github.com/losses/flame-ocean-website) and
   [Echo-Mini-Customizer](https://github.com/BlackVllad/Echo-Mini-Customizer).
 - Blargg's test ROMs confirmed the CPU core before anything was flashed.
+- ensui ([@ensui-dev](https://github.com/ensui-dev)), from the Hidizs
+  Discord, contributed the core A memory table, the
+  finding that `FwCheck` is never called (so the header date is not
+  checked), confirmation that a long press on power works during a hang,
+  and a key combination to try for a recovery mode. See
+  [Reported by ensui](docs/FINDINGS.md#reported-by-ensui-2026-11-19).
 
 ## License
 

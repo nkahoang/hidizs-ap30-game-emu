@@ -18,7 +18,47 @@ Reverse-engineering log and status notes. Last updated 2026-11-17.
 - **Unconfirmed:** why tests 1–3 only flashed briefly and test 4 worked (formatting internal storage is the leading explanation), and whether the date bump is needed.
 - **The Game & Watch emulator module runs on the device** (2026-11-17, demo ROM, launched as Game > Tank Battle; Up, Left and Right respond). Custom code in a game slot is therefore confirmed to work. Background: `gw/` holds an SM510 CPU emulator that replaces stock game module 86. It passes its tests on the PC, running against the real resident firmware code in an ARM emulator. `gw/build/HIFIYF18.IMG` is a test image with a built-in demo ROM. See [Game & Watch emulator](#game--watch-emulator-gw).
 - **The Game Boy emulator runs on the device** (2026-11-17): Dr. Mario plays at full emulation speed. `gw/build/gb/HIFIYF18.IMG` is the installed image. See [Game Boy emulator](#game-boy-emulator-gwgb).
+- **Reported by ensui (Hidizs Discord, 2026-11-19), not yet repeated here:** a long press on power still works during a hang (in the firmware and in the loader), the header date is not checked, and there is a key combination worth trying for a USB recovery mode. See [Reported by ensui](#reported-by-ensui-2026-11-19).
 - The analysis sections below are static analysis of the image unless they say otherwise.
+
+## Reported by ensui (2026-11-19)
+
+ensui ([@ensui-dev](https://github.com/ensui-dev) on GitHub), from the Hidizs Discord, read these notes and sent the following. All of it is their work. None of it has been repeated on this project's device or re-derived from the image yet, so each item is marked with what it rests on.
+
+- **A long press on power works during a hang.** ensui tested it "in multiple parts of the firmware, as well as loader LDB". So a hung game or module does not need the battery to run flat. This replaces the "not known" in the Game & Watch first-flash notes. It does not by itself recover an image that cannot boot.
+- **`FwCheck` is not called anywhere, so the header date is not used to prefer a newer firmware** (ensui's static analysis). `FwCheck` is presumably the slot check described under [Dual-slot recovery](#dual-slot-recovery-static-analysis-only) (code offset `0x5efa0`), the only place these notes found a version compare; that identification is this project's guess, not ensui's statement. If it holds, the date bump is unnecessary, and the fw1/fw2 repair table in that section describes code that never runs. A stock-dated or older-dated image on freshly formatted storage would confirm it on the device.
+- **A key combination to try:** hold **D-pad Right + power** until the screen goes dark, with `dmesg` running on the computer the player is plugged into. ensui gave this as a hint and did not say what appears. The likely meaning is that the player re-enumerates as a different USB device (a Rockchip loader or mask-ROM mode, `2207:xxxx`), which would be the recovery path these notes are missing. **Not tried here yet.** Watching what enumerates is harmless; do not send the device any commands until it is identified. On macOS there is no `dmesg` USB log by default; use `log stream --predicate 'subsystem == "com.apple.iokit.usb"'` or compare `system_profiler SPUSBDataType` before and after.
+- **Memory table**, below.
+
+### Memory table (core A view), from ensui
+
+Stock V1.7.8. Reproduced as sent; the `[AP30]` tags are ensui's.
+
+| Region | Range | Size | Used by (stock V1.7.8) |
+|---|---|---|---|
+| Stack | `0x03000000-0x03004000` | 16 KiB | main stack [AP30] |
+| Section 0 `.data` + `.bss` | `0x03004000-0x03023b44` | 127 KiB | all resident globals, permanent [AP30] |
+| Overlay data windows | `0x03023b44-0x03048b50` | 148 KiB | shared between overlay groups (below) |
+| ↳ main window (UI screens **and all games**) | `0x03023b48-0x030250fc` | **5.4 KiB** | data + bss of the current screen or game [AP30] |
+| ↳ **AudioControl (playback)** | `0x030360e8-0x03048b50` | **74.6 KiB** | PCM buffers + player state, while music may play [AP30] |
+| ↳ library build (ov 7, 37, 39) | `0x03023b70-0x0304388c` | 127 KiB | only while the library is rebuilt [AP30] |
+| ↳ USB audio (ov 11) / USB disk (ov 12) | `0x03023e0c-0x0304690c` | ~140 KiB | only in USB mode [AP30] |
+| ↳ picture decoders (ov 19, 20) | `0x030264f4-0x030360e8` | 63 KiB | picture viewer [AP30] |
+| Section 0 code | `0x03050000-0x0307e300` | 185 KiB | resident code [AP30] |
+| Overlay code windows | `0x03080e9c-0x0309f7cc` | 123 KiB | largest user: library build (ov 7, 37, 39) [AP30] |
+| ↳ main window code (UI **and games**) | `0x030815c4-0x03084bac` | **13.5 KiB** | largest game: overlay 86 (Tank Battle) [AP30] |
+| ↳ AudioControl code (ov 33) | `0x0308bf84-0x0308f724` | 13.9 KiB | playback engine [AP30] |
+| **Core A total** (SYSRAM 320 K + 256 K + PMU-SRAM 64 K) | `0x03000000-0x030a0000` | **640 KiB** | |
+| HIGHRAM0 (core B code) | `0x01000000-0x01020000` | 128 KiB | codec module, only while playing [AP30] |
+| HIGHRAM1 (core B data) | `0x01020000-0x01060000` | 256 KiB | codec data, only while playing [AP30] |
+| **Device total** | | **1 MiB** | |
+
+How it lines up with these notes:
+
+- It agrees with what was already here: the 640 KB core A range, the 16 KB stack, code from `0x03050000` to `0x0309f7cc`, and module 86 as the largest game (`0x030815c4`–`0x03084bac` is `0x35e8` bytes, the same code size `build.py` enforces) and as Tank Battle.
+- It adds the region sizes that the image does not state: core B has 384 KiB (these notes only had "at least 181 KB" from the codec modules), and the device has 1 MiB in total.
+- It says which overlay groups share which data window. The game data window is 5.4 KiB, while the 74.6 KiB AudioControl window, the picture-decoder window and both core B regions are only used by features a game does not run. That is a lead for giving the emulators more memory; whether those ranges are really untouched while a game runs (for example with music paused in the background) has not been checked here.
+- The overlay data windows end at `0x03048b50`, which is where module 35's table entry starts (see [RAM](#ram)). These notes had "data and bss up to about `0x0304b418`"; the difference has not been looked into.
 
 ## Files in this folder
 
@@ -108,14 +148,14 @@ What this proves:
 Tests 5 and 6 repeat the pattern of tests 3 and 4: the same image is skipped, then accepted after a fresh format. The working rule is therefore **format internal storage from the player's menu immediately before every copy**; a format left over from an earlier update is not enough. Why (the player writing hidden data after an update, free space, or file position on the volume) is not known.
 
 Not yet separated:
-- Whether the header date matters at all. Every image that flashed so far was also newer than the installed one, so the date has never been tested on its own. The owner suspects it is irrelevant. A freshly formatted volume plus an image dated the same as or older than the installed build would settle it.
+- Whether the header date matters at all. ensui reports from static analysis that it does not (`FwCheck` has no callers; see [Reported by ensui](#reported-by-ensui-2026-11-19)); no device test has separated it yet. Every image that flashed so far was also newer than the installed one, so the date has never been tested on its own. The owner suspects it is irrelevant. A freshly formatted volume plus an image dated the same as or older than the installed build would settle it.
 - Whether a microSD card being present matters.
 - Whether the date bump was needed. A stock-dated modified image on freshly formatted storage would answer this.
 - What the brief flash said. Filming it would tell.
 
 ## Safety rules (no reset hole)
 
-The Echo Mini's recovery needs its reset pinhole to power the device fully off before entering mask-ROM mode. The AP30 has no such hole, so there is **no known way to recover a device that won't boot**. Until one is found:
+The Echo Mini's recovery needs its reset pinhole to power the device fully off before entering mask-ROM mode. The AP30 has no such hole, so there is **no tested way to recover a device that won't boot**. ensui reports that a long press on power forces the player off even from a hang in the firmware or the loader, and suggests holding D-pad Right + power while watching the USB log; neither has been tried here (see [Reported by ensui](#reported-by-ensui-2026-11-19)). Until a recovery path is confirmed:
 
 1. **Change resources only.** Replace images with same-sized images. Avoid code patches, header layout changes and section-size changes; `rknanofw.py` enforces the last two.
 2. **Check every image before copying.** `rknanofw.py info` must show `crc ... (ok)`, and the re-extracted BMP must look right.
@@ -126,6 +166,7 @@ The Echo Mini's recovery needs its reset pinhole to power the device fully off b
 Partial safety net, static analysis only: the firmware keeps two slots and repairs a bad one from the good one once it is running, and the slot copy writes the header last, so a power cut leaves the destination invalid rather than half-valid. Whether the **bootloader** falls back to `fw2` when `fw1` can't boot is not confirmed (see [Dual-slot recovery](#dual-slot-recovery-static-analysis-only)).
 
 Ways to look for a recovery path, none tried yet:
+- **First thing to try (ensui's hint):** hold D-pad Right + power until the screen goes dark while watching the computer's USB log, and note what enumerates.
 - See whether the AP30 shows a Rockchip USB device (`2207:xxxx`) when it's fully off (power off from the menu, or after the battery runs flat) and USB is plugged in while holding different keys. On macOS: `system_profiler SPUSBDataType | grep -i -A3 rockchip`. Only watching what enumerates is harmless; don't send it any commands.
 - Open the case and look for a reset, boot or mask-ROM test pad.
 - Ask Hidizs support whether they have a USB recovery tool for the AP30.
@@ -201,6 +242,8 @@ The last 4 bytes are a little-endian Rockchip RKCRC over everything before them:
 ## Dual-slot recovery (static analysis only)
 
 The firmware keeps two copies of itself on flash and repairs a bad copy from the good one. None of this has been observed on a device.
+
+ensui reports that `FwCheck` is not called anywhere (see [Reported by ensui](#reported-by-ensui-2026-11-19)). If that is the boot-time check below, the table of repair actions and the version compare describe dead code, and only the updater's own use of the copy routine is live. Not re-checked here.
 
 - **Slots:** `fw1` is at sector 0. `fw2` is at `((fw size + 0x104000) >> 9) & ~0x7ff` sectors, i.e. after `fw1` on a 1 MB boundary. If `fw2` is not at the expected place the check steps in 0x800-sector increments looking for the magic.
 - **Validity test:** a slot is valid when its header has the `RKnanoFW` magic at `0x1f8` and the 0x200-byte header equals the header copy at `slot start + fw size`. The body is not checksummed.
@@ -307,6 +350,7 @@ The image does not state chip sizes. These are the address ranges and devices th
 - Core A layout: 16 KB stack below `0x03004000`, then data and bss, then code. All code runs from RAM: the resident module is 189 KB and the largest overlay (module 39) is 122 KB.
 - Module 35's table entry (data `0xc834` at `0x03048b50`) would overlap the resident code if loaded as written, so it is probably not loaded that way. It is excluded from the figures above.
 - No external RAM or memory-controller setup was found.
+- ensui's [memory table](#memory-table-core-a-view-from-ensui) gives the full region sizes (core B: 128 KiB code + 256 KiB data; 1 MiB in total) and breaks core A down by overlay window.
 
 ### Peripherals and devices
 
@@ -640,7 +684,7 @@ What the tests cover, and what they do not:
 First flash (your call; this breaks safety rule 1, "change resources only"):
 
 - The module's code is only loaded when its game is opened, so a fault in it should not stop the player from booting. That is an inference from the overlay design, not something observed.
-- If the game hangs there is no reset hole; the fallback is to let the battery run flat. Whether a long press on power still works during a hang is not known.
+- If the game hangs there is no reset hole; the fallback is to let the battery run flat. ~~Whether a long press on power still works during a hang is not known.~~ It does, according to ensui, who tested it in several parts of the firmware and in the loader (see [Reported by ensui](#reported-by-ensui-2026-11-19)).
 - Use the same procedure as test 4 (formatted internal storage, microSD out, full battery). The image is dated 2026-10-22, newer than both the installed build and the rollback image, so the rollback image must carry a later date: `build/rollback-1031/HIFIYF18.IMG` is stock content dated 2026-10-31 (whether the date matters at all is still untested).
 - Check first that the other games and music still work, then find the replaced game in the Games menu. Expected with the demo ROM: grey-green screen, two full-width rows of boxes with every other box lit in the top one, and a counter in the small boxes at the bottom that goes up once a second. Left, Up, Play and Right each light one line of the second row. Long-press Back to leave.
 - Things to report back: whether up/down/left/right match the corrected key table, whether the counter keeps real time, and whether the picture flickers.
@@ -782,9 +826,9 @@ Other string anchors (file offsets): `NanoCRebootFlag` `0x5e46c`, `HIFIYF00IMG` 
 
 ## Open questions
 
-1. **Brick recovery.** The AP30 has no reset pinhole. Is RKnanoD mask-ROM USB mode reachable another way (key combination from a full power-off, a test pad, a vendor tool)? This is the most important open item.
+1. **Brick recovery.** The AP30 has no reset pinhole. Is RKnanoD mask-ROM USB mode reachable another way (key combination from a full power-off, a test pad, a vendor tool)? This is the most important open item. Lead from ensui: hold D-pad Right + power until the screen goes dark and watch the USB log; a long press on power also works from a hang. See [Reported by ensui](#reported-by-ensui-2026-11-19).
 2. **Why tests 1–3 only flashed briefly** and test 4 worked: formatting, the microSD card, or something else. Filming the screen would help.
-3. **Is the date bump needed?** Try a stock-dated modified image on freshly formatted storage. Also: does the updater skip an image that is older than the installed one (relevant for going back to plain stock)?
+3. **Is the date bump needed?** Probably not: ensui reports `FwCheck` has no callers, so the date is never compared. Still to confirm on the device. Try a stock-dated modified image on freshly formatted storage. Also: does the updater skip an image that is older than the installed one (relevant for going back to plain stock)?
 4. **File name matching:** does the AP30 accept any `HIFIYFnn.IMG` like the Echo Mini's `HIFIECnn.IMG`?
 5. **Update write order:** the slot copy is power-loss safe (see [Dual-slot recovery](#dual-slot-recovery-static-analysis-only)); the write of the new image into `fw2` was not traced in full.
 6. **Bootloader fallback:** whether the bootloader starts `fw2` when `fw1` cannot boot.
